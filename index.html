@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgNP Global Toxicity Risk Map</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --risk-critical: #ff2d2d;
+    --risk-high:     #ff6b35;
+    --risk-moderate: #ffb347;
+    --risk-low:      #ffd700;
+    --risk-minimal:  #4ecdc4;
+    --c-sampling:  #58a6ff;
+    --c-model:     #a78bfa;
+    --c-species:   #34d399;
+    --c-climate:   #fb923c;
+  }
+
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── HEADER ── */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 10; flex-shrink: 0;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-text { line-height: 1; }
+  .logo-text h1 { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+  .logo-text p { font-size: 10px; color: var(--text-muted); margin-top: 1px; white-space: nowrap; }
+  .header-divider { width: 1px; height: 32px; background: var(--border); flex-shrink: 0; }
+  /* Header LC50 chart block */
+  .header-chart-block {
+    display: flex; flex-direction: column; gap: 2px;
+    flex: 1; min-width: 0; padding: 0 4px;
+  }
+  .header-chart-title {
+    font-size: 12px; font-weight: 700; color: var(--text);
+    letter-spacing: -0.01em; white-space: nowrap; line-height: 1.2;
+  }
+  .header-chart-title em {
+    font-style: normal; color: var(--c-climate); font-weight: 600;
+  }
+  .header-chart-sub {
+    font-size: 10px; color: var(--text-muted); white-space: nowrap;
+  }
+  .header-chart-canvas-row {
+    display: flex; align-items: center; gap: 8px; margin-top: 2px;
+  }
+  .header-chart-legend {
+    display: flex; flex-direction: column; gap: 3px; flex-shrink: 0;
+  }
+  .header-chart-legend span {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 9px; color: var(--text-muted); white-space: nowrap;
+  }
+  .hcl-line { width: 14px; height: 2px; display: inline-block; border-radius: 1px; flex-shrink: 0; }
+  .hcl-dashed { background: repeating-linear-gradient(90deg,#ff6b35 0,#ff6b35 3px,transparent 3px,transparent 6px); height: 2px; }
+  .header-spacer { flex: 1; }
+  .header-note { font-size: 11px; color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; }
+
+  /* ── MAIN LAYOUT ── */
+  .main { display: flex; flex: 1; overflow: hidden; min-height: 0; height: 100%; }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 280px; background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    flex-shrink: 0; overflow-y: auto; overflow-x: hidden; min-height: 0;
+  }
+  .sidebar-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-section h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 10px; }
+
+  /* Layer toggles */
+  .layer-toggle { display: flex; align-items: center; gap: 10px; padding: 7px 0; cursor: pointer; border-radius: 6px; transition: background 0.15s; }
+  .layer-toggle:hover { background: var(--surface2); padding-left: 6px; margin: 0 -6px; padding-right: 6px; }
+  .toggle-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; transition: opacity 0.2s; }
+  .toggle-body { flex: 1; }
+  .toggle-name { font-size: 13px; font-weight: 500; }
+  .toggle-count { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .toggle-switch { width: 32px; height: 18px; background: var(--border); border-radius: 9px; position: relative; transition: background 0.2s; flex-shrink: 0; }
+  .toggle-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: white; transition: transform 0.2s; }
+  .layer-toggle.active .toggle-switch { background: var(--accent); }
+  .layer-toggle.active .toggle-switch::after { transform: translateX(14px); }
+  .layer-toggle.inactive .toggle-dot { opacity: 0.3; }
+
+  /* Risk scale */
+  .risk-scale { display: flex; flex-direction: column; gap: 5px; }
+  .risk-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+  .risk-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .risk-label { color: var(--text); }
+  .risk-sub { color: var(--text-muted); margin-left: auto; font-size: 10px; }
+
+  /* Charts */
+  .chart-wrap { position: relative; }
+  .chart-wrap canvas { display: block; }
+  .chart-ylab {
+    position: absolute; left: -2px; top: 50%;
+    transform: translateY(-50%) rotate(-90deg);
+    font-size: 9px; color: var(--text-muted);
+    white-space: nowrap; transform-origin: center center;
+    pointer-events: none;
+  }
+  .chart-xlab-row { display: flex; justify-content: space-between; margin-top: 2px; font-size: 9px; color: var(--text-muted); padding: 0 4px; }
+  .chart-legend { display: flex; gap: 14px; margin-top: 5px; font-size: 10px; color: var(--text-muted); }
+  .chart-legend span { display: flex; align-items: center; gap: 5px; }
+  .leg-line { width: 18px; height: 2px; display: inline-block; border-radius: 1px; }
+
+  /* Popup styling */
+  .maplibregl-popup-content {
+    background: var(--surface) !important; color: var(--text) !important;
+    border: 1px solid var(--border) !important; border-radius: 8px !important;
+    padding: 0 !important; box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+    font-family: 'Inter', system-ui !important; max-width: 300px !important;
+  }
+  .maplibregl-popup-tip { display: none !important; }
+  .maplibregl-popup-close-button { color: var(--text-muted) !important; font-size: 18px !important; padding: 6px 10px !important; line-height: 1 !important; }
+  .popup-inner { padding: 14px; }
+  .popup-inner h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; padding-right: 24px; }
+  .popup-inner .ptag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-bottom: 10px; }
+  .tag-sampling  { background: rgba(88,166,255,0.15); color: var(--c-sampling); }
+  .tag-model     { background: rgba(167,139,250,0.15); color: var(--c-model); }
+  .tag-species   { background: rgba(52,211,153,0.15); color: var(--c-species); }
+  .tag-climate   { background: rgba(251,146,60,0.15); color: var(--c-climate); }
+  .popup-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; gap: 8px; }
+  .popup-row .pl { color: var(--text-muted); flex-shrink: 0; }
+  .popup-row .pv { font-weight: 500; text-align: right; }
+  .popup-risk { margin-top: 8px; padding: 7px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .popup-cite { font-size: 10px; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); line-height: 1.5; }
+  .popup-cite a { color: var(--accent); }
+
+  /* Gene block in species popup */
+  .gene-block { margin-top: 10px; padding: 8px 10px; background: rgba(52,211,153,0.07); border: 1px solid rgba(52,211,153,0.2); border-radius: 6px; }
+  .gene-block-title { font-size: 10px; font-weight: 700; color: #34d399; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .gene-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; font-size: 10px; gap: 6px; }
+  .gene-sym { font-weight: 700; color: var(--text); min-width: 70px; }
+  .gene-dir { font-size: 10px; }
+  .gene-dir.up { color: #ff6b35; }
+  .gene-dir.dn { color: #58a6ff; }
+  .gene-link { color: var(--accent); text-decoration: none; font-size: 9px; white-space: nowrap; }
+  .gene-link:hover { text-decoration: underline; }
+
+  /* MAP */
+  #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+
+  /* Stats bar */
+  .stats-bar { display: flex; gap: 16px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .stat-item { display: flex; align-items: center; gap: 6px; padding: 6px 0; font-size: 11px; color: var(--text-muted); }
+  .stat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .stat-num { font-weight: 700; color: var(--text); font-size: 13px; }
+
+  /* Info panel */
+  .info-panel { flex: 1; overflow-y: auto; padding: 14px 16px; }
+  .info-panel::-webkit-scrollbar { width: 4px; }
+  .info-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .info-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80px; color: var(--text-muted); font-size: 11px; text-align: center; gap: 8px; padding: 16px 0; }
+  .info-placeholder svg { opacity: 0.3; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <img id="bu-logo" src="" alt="BU CRASR" style="height:38px;width:auto;border-radius:4px;object-fit:contain;background:#1a4731;padding:3px 6px">
+    <div class="logo-text">
+      <h1>AgNP Global Risk Map</h1>
+      <p>Silver Nanoparticle Aquatic Toxicity</p>
+    </div>
+  </div>
+  <div class="header-divider"></div>
+  <div class="header-chart-block">
+    <div class="header-chart-title">AgNP Risk &amp; <em>Climate Change&#8209;Driven Salinization</em></div>
+    <div class="header-chart-sub">LC50 toxicity shifts non&#8209;monotonically with salinity &mdash; risk peaks at estuarine transition zone</div>
+    <div class="header-chart-canvas-row">
+      <canvas id="vshape-mini-header" width="340" height="44" style="border-radius:3px"></canvas>
+      <div class="header-chart-legend">
+        <span><span class="hcl-line" style="background:#58a6ff"></span>AgNPs (F.het)</span>
+        <span><span class="hcl-line hcl-dashed"></span>AgNO₂ (F.het)</span>
+      </div>
+    </div>
+  </div>
+  <div class="header-divider"></div>
+  <div style="position:relative;display:inline-block" id="dl-wrap">
+    <button onclick="toggleDlMenu()" title="Download all map data" style="display:flex;align-items:center;gap:6px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:11px;padding:5px 11px;cursor:pointer;white-space:nowrap;transition:background 0.15s" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download Data
+      <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor"><path d="M2 3.5l3 3 3-3"/></svg>
+    </button>
+    <div id="dl-menu" style="display:none;position:absolute;top:calc(100% + 4px);right:0;background:#1c2128;border:1px solid #30363d;border-radius:7px;overflow:hidden;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,0.5);z-index:9999">
+      <a href="AgNP_Map_Full_Dataset.xlsx" download style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;color:#e6edf3;text-decoration:none;border-bottom:1px solid #30363d;transition:background 0.12s" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background='transparent'">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:#e6edf3">Excel Workbook (.xlsx)</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">All 5 layers · formulas · methods tab</div>
+        </div>
+      </a>
+      <div onclick="downloadChartData()" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;color:#e6edf3;cursor:pointer;transition:background 0.12s" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background='transparent'">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:#e6edf3">CSV — LC50 Chart Data</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">V-curve · literature points · methods</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="header-divider"></div>
+  <img id="ceint-logo" src="" alt="CEINT" style="height:40px;width:auto;object-fit:contain;background:white;padding:3px 8px;border-radius:4px">
+</header>
+
+<!-- STATS BAR -->
+<div class="stats-bar">
+  <div class="stat-item"><div class="stat-dot" style="background:var(--c-sampling)"></div><span class="stat-num">8</span>&nbsp;field measurements</div>
+  <div class="stat-item"><div class="stat-dot" style="background:var(--c-model)"></div><span class="stat-num">31</span>&nbsp;modeled PEC sites</div>
+  <div class="stat-item"><div class="stat-dot" style="background:var(--c-species)"></div><span class="stat-num">25</span>&nbsp;species at risk</div>
+  <div class="stat-item"><div class="stat-dot" style="background:var(--c-climate)"></div><span class="stat-num">71</span>&nbsp;climate-shift zones</div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Layers -->
+    <div class="sidebar-section">
+      <h3>Map Layers</h3>
+      <div class="layer-toggle active" data-layer="sampling" onclick="toggleLayer('sampling', this)">
+        <div class="toggle-dot" style="background:var(--c-sampling)"></div>
+        <div class="toggle-body">
+          <div class="toggle-name" style="color:var(--c-sampling)">Field Measurements</div>
+          <div class="toggle-count">8 confirmed AgNP sites (sp-ICP-MS)</div>
+        </div>
+        <div class="toggle-switch"></div>
+      </div>
+      <div class="layer-toggle active" data-layer="model" onclick="toggleLayer('model', this)">
+        <div class="toggle-dot" style="background:var(--c-model)"></div>
+        <div class="toggle-body">
+          <div class="toggle-name" style="color:var(--c-model)">Release Models (PEC)</div>
+          <div class="toggle-count">31 predicted concentration zones</div>
+        </div>
+        <div class="toggle-switch"></div>
+      </div>
+      <div class="layer-toggle active" data-layer="species" onclick="toggleLayer('species', this)">
+        <div class="toggle-dot" style="background:var(--c-species)"></div>
+        <div class="toggle-body">
+          <div class="toggle-name" style="color:var(--c-species)">Species at Risk</div>
+          <div class="toggle-count">25 species · 126 range points</div>
+          <div style="margin-top:4px;display:flex;gap:10px;font-size:9.5px;color:var(--text-muted)">
+            <span style="display:flex;align-items:center;gap:4px"><svg width="9" height="9" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="rgba(52,211,153,0.85)" transform="rotate(45,6,6)"/></svg> Field-tested</span>
+            <span style="display:flex;align-items:center;gap:4px"><svg width="9" height="9" viewBox="0 0 12 12"><polygon points="6,1 11.2,11 0.8,11" fill="rgba(167,139,250,0.85)"/></svg> Lit. derived</span>
+          </div>
+        </div>
+        <div class="toggle-switch"></div>
+      </div>
+      <div class="layer-toggle active" data-layer="climate" onclick="toggleLayer('climate', this)">
+        <div class="toggle-dot" style="background:var(--c-climate)"></div>
+        <div class="toggle-body">
+          <div class="toggle-name" style="color:var(--c-climate)">Climate Shift Zones</div>
+          <div class="toggle-count">Global coastlines + rivers · IDW interpolated</div>
+          <div style="margin-top:5px;display:flex;flex-direction:column;gap:3px;font-size:9.5px;color:var(--text-muted)">
+            <div style="display:flex;gap:6px;align-items:center">
+              <span style="display:inline-block;width:22px;height:3px;background:linear-gradient(90deg,#14b8a6,#84cc16,#eab308,#fb923c,#ef4444);border-radius:2px"></span>
+              <span>Line color = projected Δ salinity (teal → red)</span>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#fb923c"></span>
+              <span>Cited data points (zoom in to see)</span>
+            </div>
+          </div>
+        </div>
+        <div class="toggle-switch"></div>
+      </div>
+    </div>
+
+    <!-- Risk scale -->
+    <div class="sidebar-section">
+      <h3>Climate Salinity Shift</h3>
+      <div class="risk-scale">
+        <!-- Gradient bar -->
+        <div style="height:10px;border-radius:5px;background:linear-gradient(90deg,#14b8a6,#84cc16,#eab308,#fb923c,#ef4444,#b91c1c);margin-bottom:4px"></div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-bottom:8px">
+          <span>Freshening</span><span>Stable</span><span>Extreme &#x2191;sal</span>
+        </div>
+        <div class="risk-row"><div class="risk-swatch" style="background:#14b8a6"></div><span class="risk-label">Freshening</span><span class="risk-sub">Δsal &lt; 0‰</span></div>
+        <div class="risk-row"><div class="risk-swatch" style="background:#84cc16"></div><span class="risk-label">Minimal shift</span><span class="risk-sub">Δsal 0–1‰</span></div>
+        <div class="risk-row"><div class="risk-swatch" style="background:#eab308"></div><span class="risk-label">Moderate</span><span class="risk-sub">Δsal 1–5‰</span></div>
+        <div class="risk-row"><div class="risk-swatch" style="background:#fb923c"></div><span class="risk-label">High</span><span class="risk-sub">Δsal 5–10‰</span></div>
+        <div class="risk-row"><div class="risk-swatch" style="background:#b91c1c"></div><span class="risk-label">Extreme</span><span class="risk-sub">Δsal &gt;10‰</span></div>
+        <!-- Species ring key -->
+        <div style="margin-top:8px;padding-top:7px;border-top:1px solid var(--border-color)">
+          <div style="font-size:9.5px;font-weight:600;color:var(--text-muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.05em">Species Risk Ring</div>
+          <div style="display:flex;gap:10px;font-size:9.5px;color:var(--text-muted)">
+            <span style="display:flex;align-items:center;gap:5px">
+              <svg width="12" height="12" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5" fill="none" stroke="#fb923c" stroke-width="2.5"/></svg>
+              In danger zone
+            </span>
+            <span style="display:flex;align-items:center;gap:5px">
+              <svg width="12" height="12" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5" fill="none" stroke="#34d399" stroke-width="2.5"/></svg>
+              Outside danger zone
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LC50 V-shape chart with axes -->
+    <div class="sidebar-section">
+      <h3>LC50 Toxicity Curve</h3>
+      <div class="chart-wrap" style="padding-left:22px; padding-bottom:18px;">
+        <div class="chart-ylab" style="left:2px; top:calc(50% - 9px);">LC50 (mg/L)</div>
+        <canvas id="vshape-sidebar" width="228" height="160" style="width:100%;border-radius:4px"></canvas>
+        <div style="text-align:center;font-size:9px;color:var(--text-muted);margin-top:2px;">Salinity (‰)</div>
+      </div>
+      <div class="chart-legend" style="flex-wrap:wrap;gap:5px 10px;">
+        <span><span class="leg-line" style="background:#58a6ff"></span> AgNPs (Fhet)</span>
+        <span><span class="leg-line" style="background:none;border-top:2px dashed #ff6b35"></span> AgNO₃ (Fhet)</span>
+      </div>
+
+    </div>
+
+    <!-- AgNP Speciation Chart -->
+    <div class="sidebar-section">
+      <h3>AgNP Speciation vs Salinity</h3>
+      <div class="chart-wrap" style="padding-left:22px; padding-bottom:18px;">
+        <div class="chart-ylab" style="left:2px; top:calc(50% - 9px);">% Ag species</div>
+        <canvas id="speciation-chart" width="228" height="90" style="width:100%;border-radius:4px;cursor:crosshair"></canvas>
+        <div class="chart-xlab-row" style="margin-top:3px;">
+          <span>0</span><span>1</span><span>5</span><span>10</span><span>20‰</span>
+        </div>
+        <div style="text-align:center;font-size:9px;color:var(--text-muted);margin-top:1px;">Salinity (‰)</div>
+      </div>
+      <div class="chart-legend" style="flex-wrap:wrap;gap:6px 12px;">
+        <span><span class="leg-line" style="background:#58a6ff"></span> AgNP (particle)</span>
+        <span><span class="leg-line" style="background:#ff6b35"></span> Ag⁺ (ionic)</span>
+        <span><span class="leg-line" style="background:#e879f9"></span> AgCl (ppt)</span>
+      </div>
+      <div id="spec-tooltip" style="font-size:10px;color:var(--text-muted);margin-top:5px;min-height:14px;text-align:center;"></div>
+    </div>
+
+    <!-- Selected point info -->
+    <div class="info-panel">
+      <div class="info-placeholder" id="info-placeholder">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>
+        </svg>
+        <span>Click any point on the map<br>to see details</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MAP -->
+  <div style="position:relative; flex:1; min-height:0; height:100%;">
+    <div id="map"></div>
+  </div>
+
+</div>
+
+<!-- DATA -->
+<script src="logos.js"></script>
+<script src="data_l3.js"></script>
+<script src="geojson_l1.js"></script>
+<script src="geojson_l2.js"></script>
+<script src="geojson_l4.js"></script>
+<script src="geojson_climate_lines.js"></script>
+<script src="geojson_ocean_grid.js"></script>
+<script src="ne_land_mask.js"></script>
+
+<script>
+// ── V-SHAPE TOXICITY DATA ─────────────────────────────────────────────────
+const VCURVE = {
+  // Authoritative LC50 values from PPTX / DRC output (F. grandis / F. heteroclitus)
+  salinity: [0, 0.1, 0.5, 5.0, 10.0, 20.0],
+  // AgNO3: classic V-shape — peaks at 0.5ppt (least toxic), dips hard at 5ppt (most toxic)
+  agno3_lc50: [0.358, 0.597, 0.822, 0.271, 0.303, 0.359],
+  // AgNPs: inverse — low FW toxicity, rises with salinity, peaks at 5ppt, stays high
+  agnps_lc50: [8.51,  10.99, 32.02, 61.02, 36.63, 39.35],
+};
+
+// ── LITERATURE LC50 DATA POINTS ───────────────────────────────────────────
+// type: 'known' = salinity reported directly; 'derived' = converted from IS/hardness
+// symbol: 'diamond' = known, 'triangle' = derived, 'triangle-marine' = marine species
+// AgNP points only (AgNO3 literature points omitted — Fhet curve already defines ionic baseline)
+const LIT_POINTS = [
+  // ── DERIVED: freshwater test media, IS→salinity conversion ──
+  // ISO OECD Daphnia medium: IS~12mM → ~0.15 ppt
+  { species:'Daphnia magna',      label:'D. magna',      sal:0.15, lc50:0.043,  type:'AgNP', kind:'derived',
+    doi:'10.1155/2015/893049',    cite:'Kim et al. 2015',    note:'ISO OECD medium; IS≈12mM → ~0.15‰' },
+  { species:'Oryzias latipes',    label:'O. latipes',    sal:0.15, lc50:0.85,   type:'AgNP', kind:'derived',
+    doi:'10.1155/2015/893049',    cite:'Kim et al. 2015',    note:'ISO OECD medium; IS≈12mM → ~0.15‰' },
+  { species:'Daphnia magna',      label:'D. magna',      sal:0.15, lc50:0.010,  type:'AgNP', kind:'derived',
+    doi:'10.1186/1477-3155-10-14',cite:'Choi et al. 2012',   note:'ISO medium; most toxic AgNP form' },
+  { species:'Coregonus lavaretus',label:'C. lavaretus',  sal:0.15, lc50:0.51,   type:'AgNP', kind:'derived',
+    doi:'10.1080/15287394.2021.1988014', cite:'Vogt et al. 2021', note:'ISO medium; 8-wk LC50' },
+  { species:'Cyprinus carpio',    label:'C. carpio',     sal:0.15, lc50:0.072,  type:'AgNP', kind:'derived',
+    doi:'10.1155/2012/262670',    cite:'Lee et al. 2012',    note:'OECD reconstituted FW; citrate-AgNP' },
+  // ASTM very hard water: IS≈18mM → ~0.25 ppt
+  { species:'Coregonus lavaretus',label:'C. lavaretus',  sal:0.25, lc50:0.73,   type:'AgNP', kind:'derived',
+    doi:'10.1080/15287394.2021.1988014', cite:'Vogt et al. 2021', note:'ASTM very hard water; IS≈18mM → ~0.25‰' },
+  // Zebrafish facility water: IS≈1-2mM → ~0.01 ppt
+  { species:'Danio rerio',        label:'D. rerio',      sal:0.01, lc50:0.084,  type:'AgNP', kind:'derived',
+    doi:'10.1155/2012/293784',    cite:'Bilberg et al. 2012',note:'ZFW; IS≈1mM → ~0.01‰; PVP-AgNP 81nm' },
+  { species:'Danio rerio (embryo)',label:'D. rerio emb.', sal:0.01, lc50:1.19,  type:'AgNP', kind:'derived',
+    doi:'10.1016/j.jhazmat.2018.04.019', cite:'Cáceres-Vélez 2018', note:'ZFW; IS≈1mM → ~0.01‰; citrate-AgNP' },
+  // Natural lake water: IS≈2-3mM → ~0.02 ppt
+  { species:'Coregonus lavaretus',label:'C. lavaretus',  sal:0.02, lc50:0.62,   type:'AgNP', kind:'derived',
+    doi:'10.1080/15287394.2021.1988014', cite:'Vogt et al. 2021', note:'Natural lake water; IS≈2mM → ~0.02‰' },
+  // Estuarine halocline mesocosm, FW zone ~0.3 ppt (known)
+  { species:'Daphnia magna',      label:'D. magna',      sal:0.30, lc50:0.019,  type:'AgNP', kind:'known',
+    doi:'10.3390/environments9020020',   cite:'Fortin et al. 2022', note:'Estuarine mesocosm FW zone; ~0.3‰ measured' },
+  // ── MARINE (known salinity 35 ppt) ──
+  { species:'Isochrysis galbana', label:'I. galbana',    sal:35.0, lc50:0.22,   type:'AgNP', kind:'marine',
+    doi:'10.3390/toxics13050338', cite:'Ale et al. 2025',    note:'Seawater 35‰; nanArgen™; 72h EC50' },
+  { species:'Paracentrotus lividus',label:'P. lividus',  sal:35.0, lc50:0.18,   type:'AgNP', kind:'marine',
+    doi:'10.3390/toxics13050338', cite:'Ale et al. 2025',    note:'Seawater 35‰; nanArgen™; 48h EC50' },
+];
+
+// AgNP speciation data across salinity (approximate % from literature)
+// Based on: NP=particle form, Ionic=dissolved Ag+, Chloro=AgCl precipitate
+const SPECIATION = {
+  salinity: [0, 0.5, 1, 2, 5, 10, 15, 20, 35],
+  pct_np:   [92, 85, 75, 58, 30, 14,  7,  4,  2],  // AgNP particle %
+  pct_ion:  [ 8, 13, 20, 28, 38, 22, 12,  7,  3],  // free Ag+ %
+  pct_cl:   [ 0,  2,  5, 14, 32, 64, 81, 89, 95],  // AgCl precipitate %
+};
+
+// ── RISK FUNCTIONS ────────────────────────────────────────────────────────
+function salinityToRisk(sal_ppt) {
+  if (sal_ppt <= 1.0) return 1.0;
+  if (sal_ppt <= 2.0) return 0.8;
+  if (Math.abs(sal_ppt - 5.0) <= 2.0) return 0.85;
+  if (sal_ppt <= 10.0) return 0.55;
+  return 0.35;
+}
+function riskColor(score) {
+  if (score >= 0.9) return '#ff2d2d';
+  if (score >= 0.75) return '#ff6b35';
+  if (score >= 0.6)  return '#ffb347';
+  if (score >= 0.45) return '#ffd700';
+  return '#4ecdc4';
+}
+function riskLabel(score) {
+  if (score >= 0.9) return 'Critical';
+  if (score >= 0.75) return 'High';
+  if (score >= 0.6)  return 'Moderate';
+  if (score >= 0.45) return 'Elevated';
+  return 'Baseline';
+}
+function concToRisk(conc_ng_L, lc50_mg_L) {
+  if (!conc_ng_L || !lc50_mg_L) return 0.3;
+  const ratio = conc_ng_L / (lc50_mg_L * 1e6);
+  if (ratio >= 0.1) return 1.0;
+  if (ratio >= 0.01) return 0.8;
+  if (ratio >= 0.001) return 0.6;
+  if (ratio >= 0.0001) return 0.4;
+  return 0.25;
+}
+
+// ── DRAW HEADER MINI V-SHAPE ──────────────────────────────────────────────
+function drawVShapeHeader() {
+  const canvas = document.getElementById('vshape-mini-header');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const sal = VCURVE.salinity, agnps = VCURVE.agnps_lc50, agno3 = VCURVE.agno3_lc50;
+  ctx.clearRect(0,0,W,H);
+
+  // Same log y + linear x as sidebar chart
+  const SAL_MAX = 20;
+  const LOG_YMIN = Math.log10(0.1), LOG_YMAX = Math.log10(100);
+  const LOG_YRANGE = LOG_YMAX - LOG_YMIN;
+  const PAD_L = 24, PAD_R = 6, PAD_T = 4, PAD_B = 14;
+  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
+
+  const px  = s => PAD_L + (s / SAL_MAX) * cW;
+  const py  = v => PAD_T + cH * (1 - (Math.log10(Math.max(v, 0.001)) - LOG_YMIN) / LOG_YRANGE);
+  const pxi = i => px(sal[i]);
+  const pyi_nps = i => py(agnps[i]);
+  const pyi_no3 = i => py(agno3[i]);
+
+  // Y grid ticks (decade lines only)
+  ctx.strokeStyle = 'rgba(48,54,61,0.8)'; ctx.lineWidth = 0.5;
+  ctx.font = '6.5px Inter,system-ui'; ctx.textAlign = 'right'; ctx.fillStyle = '#6e7681';
+  [{v:0.1,l:'0.1'},{v:1,l:'1'},{v:10,l:'10'},{v:100,l:'100'}].forEach(({v,l}) => {
+    const y = py(v);
+    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(PAD_L + cW, y); ctx.stroke();
+    ctx.fillText(l, PAD_L - 2, y + 2);
+  });
+
+  // X tick labels
+  ctx.textAlign = 'center'; ctx.fillStyle = '#6e7681';
+  [{s:0,l:'0'},{s:0.5,l:'0.5'},{s:5,l:'5‰'},{s:10,l:'10'},{s:20,l:'20‰'}].forEach(({s,l}) => {
+    ctx.fillText(l, px(s), PAD_T + cH + 10);
+  });
+
+  // 5‰ dashed vertical
+  ctx.beginPath(); ctx.moveTo(px(5), PAD_T); ctx.lineTo(px(5), PAD_T + cH);
+  ctx.strokeStyle = 'rgba(255,107,53,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([2,2]); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Shaded gap between curves
+  ctx.beginPath();
+  sal.forEach((_,i) => i===0 ? ctx.moveTo(pxi(i),pyi_nps(i)) : ctx.lineTo(pxi(i),pyi_nps(i)));
+  for (let i=sal.length-1;i>=0;i--) ctx.lineTo(pxi(i),pyi_no3(i));
+  ctx.closePath(); ctx.fillStyle='rgba(88,166,255,0.07)'; ctx.fill();
+
+  // AgNPs line (blue solid)
+  ctx.beginPath();
+  sal.forEach((_,i) => i===0 ? ctx.moveTo(pxi(i),pyi_nps(i)) : ctx.lineTo(pxi(i),pyi_nps(i)));
+  ctx.strokeStyle='#58a6ff'; ctx.lineWidth=1.5; ctx.setLineDash([]); ctx.stroke();
+  sal.forEach((_,i) => {
+    ctx.beginPath(); ctx.arc(pxi(i),pyi_nps(i),2,0,Math.PI*2);
+    ctx.fillStyle='#58a6ff'; ctx.fill();
+  });
+
+  // AgNO3 line (orange dashed)
+  ctx.beginPath();
+  sal.forEach((_,i) => i===0 ? ctx.moveTo(pxi(i),pyi_no3(i)) : ctx.lineTo(pxi(i),pyi_no3(i)));
+  ctx.strokeStyle='#ff6b35'; ctx.lineWidth=1.2; ctx.setLineDash([3,2]); ctx.stroke();
+  ctx.setLineDash([]);
+  sal.forEach((_,i) => {
+    ctx.beginPath(); ctx.arc(pxi(i),pyi_no3(i),2,0,Math.PI*2);
+    ctx.fillStyle='#ff6b35'; ctx.fill();
+  });
+
+  // ~100× label at 10‰
+  const i10 = sal.indexOf(10.0);
+  const gapMidY = (pyi_nps(i10) + pyi_no3(i10)) / 2;
+  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='7px Inter,system-ui'; ctx.textAlign='left';
+  ctx.fillText('~100×', px(10)+3, gapMidY+3);
+}
+
+// ── DRAW SIDEBAR LC50 CURVE WITH AXES ─────────────────────────────────────
+function drawVShapeSidebar() {
+  const canvas = document.getElementById('vshape-sidebar');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const sal = VCURVE.salinity, agnps = VCURVE.agnps_lc50, agno3 = VCURVE.agno3_lc50;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#161b22'; ctx.fillRect(0,0,W,H);
+
+  // Linear x: 0–20‰. Log y: 0.1–100 mg/L.
+  // Log y shows both the V-shape in AgNO3 AND the hump in AgNPs,
+  // plus the ~100× gap is legible across the full salinity range.
+  const SAL_MAX = 20;
+  const LOG_YMIN = Math.log10(0.1);
+  const LOG_YMAX = Math.log10(100);
+  const LOG_YRANGE = LOG_YMAX - LOG_YMIN;
+
+  const PAD_L = 28, PAD_R = 10, PAD_T = 10, PAD_B = 16;
+  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
+
+  const px  = s  => PAD_L + (s / SAL_MAX) * cW;
+  const py  = v  => PAD_T + cH * (1 - (Math.log10(Math.max(v, 0.001)) - LOG_YMIN) / LOG_YRANGE);
+  const pxi = i  => px(sal[i]);
+  const pyi_nps = i => py(agnps[i]);
+  const pyi_no3 = i => py(agno3[i]);
+
+  // Y grid + labels — log ticks
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 0.5;
+  ctx.font = '7px Inter,system-ui'; ctx.textAlign = 'right'; ctx.fillStyle = '#8b949e';
+  [{v:0.1,l:'0.1'},{v:0.3,l:'0.3'},{v:1,l:'1'},{v:3,l:'3'},{v:10,l:'10'},{v:30,l:'30'},{v:100,l:'100'}].forEach(({v,l}) => {
+    const y = py(v);
+    if (y < PAD_T - 2 || y > PAD_T + cH + 2) return;
+    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(PAD_L + cW, y); ctx.stroke();
+    ctx.fillText(l, PAD_L - 3, y + 2.5);
+  });
+
+  // X grid + labels — linear x, 6 data points: 0,0.1,0.5,5,10,20‰
+  ctx.textAlign = 'center';
+  [{s:0,l:'0'},{s:0.1,l:'0.1'},{s:0.5,l:'0.5'},{s:5,l:'5'},{s:10,l:'10'},{s:20,l:'20‰'}].forEach(({s,l}) => {
+    const x = px(s);
+    ctx.strokeStyle = '#21262d'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(x, PAD_T); ctx.lineTo(x, PAD_T + cH); ctx.stroke();
+    ctx.fillStyle = '#8b949e';
+    ctx.fillText(l, x, PAD_T + cH + 10);
+  });
+
+  // Shaded gap between the two curves (the "100x potency gap" region)
+  ctx.beginPath();
+  sal.forEach((_, i) => i === 0 ? ctx.moveTo(pxi(i), pyi_nps(i)) : ctx.lineTo(pxi(i), pyi_nps(i)));
+  for (let i = sal.length - 1; i >= 0; i--) ctx.lineTo(pxi(i), pyi_no3(i));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(88,166,255,0.07)'; ctx.fill();
+
+  // AgNPs line (blue solid) — Λ shape on its own, ~100x less potent
+  ctx.beginPath();
+  sal.forEach((_, i) => i === 0 ? ctx.moveTo(pxi(i), pyi_nps(i)) : ctx.lineTo(pxi(i), pyi_nps(i)));
+  ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.stroke();
+  sal.forEach((_, i) => {
+    ctx.beginPath(); ctx.arc(pxi(i), pyi_nps(i), 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#58a6ff'; ctx.fill();
+  });
+
+  // AgNO3 line (orange dashed) — shallow V, ~100x more potent
+  ctx.beginPath();
+  sal.forEach((_, i) => i === 0 ? ctx.moveTo(pxi(i), pyi_no3(i)) : ctx.lineTo(pxi(i), pyi_no3(i)));
+  ctx.strokeStyle = '#ff6b35'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.stroke();
+  ctx.setLineDash([]);
+  sal.forEach((_, i) => {
+    ctx.beginPath(); ctx.arc(pxi(i), pyi_no3(i), 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff6b35'; ctx.fill();
+  });
+
+  // 5‰ annotation
+  const sx5 = px(5);
+  ctx.beginPath(); ctx.moveTo(sx5, PAD_T); ctx.lineTo(sx5, PAD_T + cH);
+  ctx.strokeStyle = 'rgba(255,107,53,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([2, 2]); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ff6b3599'; ctx.font = '7px Inter,system-ui'; ctx.textAlign = 'left';
+  ctx.fillText('5‰', sx5 + 2, PAD_T + 8);
+
+  // "~100×" gap label — centered in the gap between curves at 10‰
+  const i10 = sal.indexOf(10.0);
+  const gapX = px(10) + 3;
+  const gapMidY = (pyi_nps(i10) + pyi_no3(i10)) / 2;
+  ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '7.5px Inter,system-ui'; ctx.textAlign = 'left';
+  ctx.fillText('~100×', gapX, gapMidY + 3);
+
+}
+
+// ── DRAW SPECIATION CHART ─────────────────────────────────────────────────
+function drawSpeciationChart(hoverX) {
+  const canvas = document.getElementById('speciation-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#161b22'; ctx.fillRect(0,0,W,H);
+
+  const PAD_L=6, PAD_R=6, PAD_T=8, PAD_B=6;
+  const cW = W-PAD_L-PAD_R, cH = H-PAD_T-PAD_B;
+  const sal = SPECIATION.salinity;
+  const MAX_SAL = 20;
+
+  // Grid lines at 25/50/75/100%
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=0.5;
+  [25,50,75,100].forEach(pct => {
+    const y = PAD_T + cH*(1-pct/100);
+    ctx.beginPath(); ctx.moveTo(PAD_L,y); ctx.lineTo(W-PAD_R,y); ctx.stroke();
+  });
+
+  // Y-axis labels
+  ctx.fillStyle='#8b949e'; ctx.font='8px Inter,system-ui'; ctx.textAlign='right';
+  [0,50,100].forEach(pct => {
+    const y = PAD_T + cH*(1-pct/100);
+    ctx.fillText(pct+'%', PAD_L-1, y+3);
+  });
+  ctx.textAlign='left';
+
+  const px = i => PAD_L + (Math.min(sal[i],MAX_SAL)/MAX_SAL)*cW;
+  const py = pct => PAD_T + cH*(1-pct/100);
+
+  // Draw stacked fills: NP (bottom), Ion (middle), Cl (top)
+  // NP area
+  ctx.beginPath(); ctx.moveTo(px(0), py(0));
+  sal.forEach((_,i) => ctx.lineTo(px(i), py(SPECIATION.pct_np[i])));
+  ctx.lineTo(px(sal.length-1), py(0)); ctx.closePath();
+  ctx.fillStyle='rgba(88,166,255,0.25)'; ctx.fill();
+
+  // NP line
+  ctx.beginPath();
+  sal.forEach((_,i) => i===0 ? ctx.moveTo(px(i),py(SPECIATION.pct_np[i])) : ctx.lineTo(px(i),py(SPECIATION.pct_np[i])));
+  ctx.strokeStyle='#58a6ff'; ctx.lineWidth=1.8; ctx.setLineDash([]); ctx.stroke();
+
+  // Ag+ line
+  ctx.beginPath();
+  sal.forEach((_,i) => i===0 ? ctx.moveTo(px(i),py(SPECIATION.pct_ion[i])) : ctx.lineTo(px(i),py(SPECIATION.pct_ion[i])));
+  ctx.strokeStyle='#ff6b35'; ctx.lineWidth=1.8; ctx.stroke();
+
+  // AgCl line
+  ctx.beginPath();
+  sal.forEach((_,i) => i===0 ? ctx.moveTo(px(i),py(SPECIATION.pct_cl[i])) : ctx.lineTo(px(i),py(SPECIATION.pct_cl[i])));
+  ctx.strokeStyle='#e879f9'; ctx.lineWidth=1.8; ctx.setLineDash([3,2]); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Hover crosshair
+  if (hoverX !== undefined) {
+    const salVal = ((hoverX - PAD_L) / cW) * MAX_SAL;
+    const clampedSal = Math.max(0, Math.min(MAX_SAL, salVal));
+    // interpolate
+    const interp = (arr) => {
+      for (let i=0; i<sal.length-1; i++) {
+        if (clampedSal >= sal[i] && clampedSal <= sal[i+1]) {
+          const t = (clampedSal - sal[i]) / (sal[i+1] - sal[i]);
+          return arr[i] + t*(arr[i+1]-arr[i]);
+        }
+      }
+      return arr[arr.length-1];
+    };
+    const npPct = interp(SPECIATION.pct_np);
+    const ionPct = interp(SPECIATION.pct_ion);
+    const clPct = interp(SPECIATION.pct_cl);
+    const cx = PAD_L + (clampedSal/MAX_SAL)*cW;
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1; ctx.setLineDash([2,2]);
+    ctx.beginPath(); ctx.moveTo(cx,PAD_T); ctx.lineTo(cx,PAD_T+cH); ctx.stroke();
+    ctx.setLineDash([]);
+    // Dots
+    [[npPct,'#58a6ff'],[ionPct,'#ff6b35'],[clPct,'#e879f9']].forEach(([pct,col]) => {
+      ctx.beginPath(); ctx.arc(cx,py(pct),3,0,Math.PI*2);
+      ctx.fillStyle=col; ctx.fill();
+    });
+    document.getElementById('spec-tooltip').innerHTML =
+      `<span style="color:#888">${clampedSal.toFixed(1)}‰ →</span> ` +
+      `<span style="color:#58a6ff">NP ${npPct.toFixed(0)}%</span> · ` +
+      `<span style="color:#ff6b35">Ag⁺ ${ionPct.toFixed(0)}%</span> · ` +
+      `<span style="color:#e879f9">AgCl ${clPct.toFixed(0)}%</span>`;
+  }
+}
+
+// Wire up speciation chart hover
+document.getElementById('speciation-chart').addEventListener('mousemove', function(e) {
+  const rect = this.getBoundingClientRect();
+  const scaleX = this.width / rect.width;
+  drawSpeciationChart((e.clientX - rect.left) * scaleX);
+});
+document.getElementById('speciation-chart').addEventListener('mouseleave', function() {
+  drawSpeciationChart();
+  document.getElementById('spec-tooltip').textContent = '';
+});
+
+// ── DOWNLOAD CHART DATA ─────────────────────────────────────────────────────
+function toggleDlMenu() {
+  const menu = document.getElementById('dl-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('dl-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const menu = document.getElementById('dl-menu');
+    if (menu) menu.style.display = 'none';
+  }
+});
+
+function downloadChartData() {
+  const rows = [];
+
+  // Sheet 1 header
+  rows.push('=== AgNP V-Shape Toxicity Curve (Fhet) ===');
+  rows.push('Salinity_ppt,AgNPs_LC50_mgL,AgNO3_LC50_mgL,Source');
+  VCURVE.salinity.forEach((s, i) => {
+    rows.push(`${s},${VCURVE.agnps_lc50[i]},${VCURVE.agno3_lc50[i]},"Lau et al. 2023 — Fundulus heteroclitus 96h LC50"`); 
+  });
+
+  rows.push('');
+  rows.push('=== Literature LC50 Data Points (AgNPs) ===');
+  rows.push('Species,Salinity_ppt,LC50_mgL,Type,Symbol,Test_Medium_Note,Citation,DOI');
+  LIT_POINTS.forEach(pt => {
+    const sym = pt.kind === 'known' ? 'Diamond (known salinity)' : pt.kind === 'marine' ? 'Triangle (marine known)' : 'Triangle (derived IS→sal)';
+    const cite = (pt.cite || '').replace(/"/g, "'");
+    const note = (pt.note || '').replace(/"/g, "'");
+    rows.push(`"${pt.species}",${pt.sal},${pt.lc50},${pt.type},"${sym}","${note}","${cite}",https://doi.org/${pt.doi}`);
+  });
+
+  rows.push('');
+  rows.push('=== Notes ===');
+  rows.push('"V-shape curve: AgNP LC50 peaks at ~5 ppt (sweet-spot) — highest toxicity in freshwater and estuarine zones."');
+  rows.push('"Literature points: Derived = IS converted to salinity using Henderson-Hasselbalch; Known = salinity reported directly."');
+  rows.push('"Scenario harmonization: RCP8.5 ≡ SSP5-8.5 per Hausfather & Peters 2020 (Nature)."');
+
+  const csv = rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'AgNP_LC50_Chart_Data.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Inject logos + draw charts
+document.getElementById('bu-logo').src = BU_LOGO;
+document.getElementById('ceint-logo').src = CEINT_LOGO;
+drawVShapeHeader();
+drawVShapeSidebar();
+drawSpeciationChart();
+
+// ── SEQAPASS GENE DATA ────────────────────────────────────────────────────
+// Per-species SeqAPASS query links using the best fish ortholog for each
+// Query protein: ATP1A1 (primary Ag+ target, Level 3) via SeqAPASS v8
+// URL format: https://seqapass.epa.gov/seqapass/ — deep-link by accession
+function seqapassUrl(accession) {
+  return `https://seqapass.epa.gov/seqapass/`;
+}
+
+// Gene signal HTML for species popups
+const GENE_TABLE = [
+  { sym: 'ATP1A1', dir: 'dn', label: '↓ inhibited', desc: 'Primary Ag⁺ target · Na⁺/K⁺-ATPase failure', acc: 'NP_000692.2' },
+  { sym: 'MT2',    dir: 'up', label: '↑ saturates', desc: 'Metal detox buffer — saturation = death', acc: 'NP_001002440.1' },
+  { sym: 'CASP3',  dir: 'up', label: '↑ executes',  desc: 'Apoptosis committed — irreversible', acc: 'NP_571952.1' },
+  { sym: 'NKCC1',  dir: 'dn', label: '↓ collapses', desc: 'Osmoregulatory failure (downstream ATP1A1)', acc: 'NP_001002080.1' },
+  { sym: 'HSP70',  dir: 'up', label: '↑ then crash',desc: 'Proteostatic failure preceding death', acc: 'NP_005336.3' },
+];
+
+function geneBlockHtml(speciesName, sciName) {
+  // Build SeqAPASS URL for ATP1A1 — primary target
+  // SeqAPASS takes query by accession via its search form; we link to the tool with instructions
+  const sapUrl = `https://seqapass.epa.gov/seqapass/`;
+  const rows = GENE_TABLE.map(g => `
+    <div class="gene-row">
+      <span class="gene-sym">${g.sym}</span>
+      <span class="gene-dir ${g.dir}">${g.label}</span>
+      <a class="gene-link" href="${sapUrl}" target="_blank" title="Run SeqAPASS for ${g.acc}">SeqAPASS ↗</a>
+    </div>
+  `).join('');
+
+  return `
+    <div class="gene-block">
+      <div class="gene-block-title">🧬 Mortality Sentinel Genes</div>
+      <div style="font-size:9px;color:var(--text-muted);margin-bottom:6px;">
+        Salinity ↑ + AgNP ↑ → these genes signal lethality.<br>
+        <a href="https://seqapass.epa.gov/seqapass/" target="_blank" style="color:var(--accent)">
+          Run SeqAPASS for <em>${sciName}</em> ATP1A1 →
+        </a>
+      </div>
+      ${rows}
+      <div style="font-size:9px;color:var(--text-muted);margin-top:5px;border-top:1px solid rgba(52,211,153,0.2);padding-top:5px;">
+        ATP1A1 query: <code style="color:#58a6ff;font-size:9px">NP_000692.2</code> · Level 3 (Ag-binding residues Q111, A112, N122)
+      </div>
+    </div>`;
+}
+
+// ── MAPLIBRE INIT ─────────────────────────────────────────────────────────
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+    sources: {
+      'carto-dark': {
+        type: 'raster',
+        tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'],
+        tileSize: 256,
+        attribution: '© CARTO © OpenStreetMap contributors',
+        maxzoom: 19
+      }
+    },
+    layers: [{ id: 'carto-dark-layer', type: 'raster', source: 'carto-dark', minzoom: 0, maxzoom: 22 }]
+  },
+  center: [-20, 20],
+  zoom: 1.8,
+  maxZoom: 14,
+  minZoom: 1.5,
+  attributionControl: { compact: true }
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
+
+const layerVisible = { sampling: true, model: true, species: true, climate: true };
+const markers = { species: [] };
+let activePopup = null;
+
+// ── POPUP BUILDER ─────────────────────────────────────────────────────────
+function showPopup(lngLat, html) {
+  if (activePopup) activePopup.remove();
+  activePopup = new maplibregl.Popup({ closeButton: true, maxWidth: '310px', offset: 14 })
+    .setLngLat(lngLat)
+    .setHTML(`<div class="popup-inner">${html}</div>`)
+    .addTo(map);
+}
+function tagHtml(type, label) { return `<span class="ptag tag-${type}">${label}</span>`; }
+function popupRow(label, value) { return `<div class="popup-row"><span class="pl">${label}</span><span class="pv">${value}</span></div>`; }
+function riskBadgeHtml(score) {
+  const color = riskColor(score), label = riskLabel(score);
+  return `<div class="popup-risk" style="background:${color}22;border:1px solid ${color}55;color:${color}">
+    <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></div>
+    ${label} Risk — V-shape toxicity curve
+  </div>`;
+}
+function citeHtml(citation, doi) {
+  const link = doi ? `<a href="https://doi.org/${doi}" target="_blank">${citation}</a>` : citation;
+  return `<div class="popup-cite">📄 ${link}</div>`;
+}
+
+// ── SPECIES MARKERS ───────────────────────────────────────────────────────
+let _speciesBuilt = false;
+function buildSpeciesMarkers() {
+  if (_speciesBuilt) return;
+  _speciesBuilt = true;
+  LAYER3.forEach(sp => {
+    const sensitivityScore = sp.lc50_mg_L < 0.01 ? 1.0
+                           : sp.lc50_mg_L < 0.1  ? 0.85
+                           : sp.lc50_mg_L < 1.0  ? 0.65
+                           : sp.lc50_mg_L < 10   ? 0.45
+                           : 0.25;
+
+    // Danger zone: FW/estuarine species with LC50 at low salinity are "in" the 0–5‰ window
+    const inDanger = sp.habitat && (sp.habitat.toLowerCase().includes('fresh') ||
+                     sp.habitat.toLowerCase().includes('fw') ||
+                     sp.habitat.toLowerCase() === 'estuarine' ||
+                     sp.habitat.toLowerCase().includes('estuarine'));
+    const ringColor = inDanger ? '#fb923c' : '#34d399';
+    const ringGlow  = inDanger ? 'rgba(251,146,60,0.35)' : 'rgba(52,211,153,0.25)';
+
+    sp.locations.forEach(loc => {
+      // Diamond for standard species; triangle for literature-derived species
+      // Single 18x18 SVG — ring circle + shape in same SVG coordinate space.
+      // No overflow:visible, no absolutely-positioned child elements.
+      // Container is exactly 18x18; anchor:'center' pins correctly to geo-coord.
+      const isTriangle = sp.marker_type === 'triangle';
+
+      // Zero-size wrapper: MapLibre places top-left at geo-point (no measurement needed).
+      // SVG uses CSS transform to visually center itself on that point.
+      // Works correctly in iframes and embedded contexts.
+      const el = document.createElement('div');
+      el.style.cssText = 'width:0;height:0;cursor:pointer;position:relative;overflow:visible;';
+
+      // All drawing in one SVG. viewBox 0 0 18 18, shapes centered at (9,9).
+      // NO overflow:visible — ring and shapes all contained within 18×18px box.
+      // Ring circle: r=8, stroke-width=1.5 → outer edge at 8.75px < 9px (stays inside).
+      // This ensures el.offsetWidth/Height = exactly 18px → anchor:center works correctly.
+      if (isTriangle) {
+        // Triangle as explicit SVG path — no transform needed, works under CSS 3D parent
+        el.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18"
+          style="position:absolute;transform:translate(-50%,-50%);display:block;">
+          <circle cx="9" cy="9" r="8"
+            fill="none" stroke="${ringColor}" stroke-width="1.5" opacity="0.8"/>
+          <path d="M9,3.5 L15,14.5 L3,14.5 Z"
+            fill="rgba(167,139,250,0.85)" stroke="rgba(167,139,250,0.55)" stroke-width="1.2"
+            style="transition:transform 0.15s;transform-origin:9px 9px;"/>
+        </svg>`;
+        const shape = el.querySelector('path');
+        el.addEventListener('mouseenter', () => shape.style.transform = 'scale(1.15)');
+        el.addEventListener('mouseleave', () => shape.style.transform = '');
+      } else {
+        // Diamond as explicit path — M=top, R=right, B=bottom, L=left — no SVG transform attr
+        el.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18"
+          style="position:absolute;transform:translate(-50%,-50%);display:block;">
+          <circle cx="9" cy="9" r="8"
+            fill="none" stroke="${ringColor}" stroke-width="1.5" opacity="0.8"/>
+          <path d="M9,2.5 L15.5,9 L9,15.5 L2.5,9 Z"
+            fill="rgba(52,211,153,0.85)" stroke="rgba(52,211,153,0.55)" stroke-width="1.2"
+            style="transition:transform 0.15s;transform-origin:9px 9px;"/>
+        </svg>`;
+        const shape = el.querySelector('path');
+        el.addEventListener('mouseenter', () => shape.style.transform = 'scale(1.15)');
+        el.addEventListener('mouseleave', () => shape.style.transform = '');
+      }
+
+      const popup_html = `
+        ${tagHtml('species', 'Species at Risk')}
+        <h4>${sp.common_name} <em style="font-weight:400;color:#8b949e">(${sp.scientific_name})</em></h4>
+        ${popupRow('Habitat', sp.habitat === 'FW' ? '🔵 Freshwater' : sp.habitat === 'estuarine' ? '🟡 Estuarine' : '🟢 Marine')}
+        ${popupRow('AgNP LC50', `${sp.lc50_mg_L} mg/L (${sp.lc50_exposure_h}h)`)}
+        ${sp.agnp_size_nm ? popupRow('AgNP size', `${sp.agnp_size_nm} nm`) : ''}
+        ${sp.agnp_coating ? popupRow('Coating', sp.agnp_coating) : ''}
+        ${popupRow('Location', loc.name)}
+        <div style="margin-top:6px;padding:6px 8px;background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);border-radius:6px;font-size:10px;color:#34d399">
+          <strong>Sensitivity:</strong> ${sensitivityScore >= 0.85 ? '⚠️ Highly sensitive' : sensitivityScore >= 0.65 ? '🔶 Moderately sensitive' : '🔵 Lower sensitivity'}
+        </div>
+        ${geneBlockHtml(sp.common_name, sp.scientific_name)}
+        ${citeHtml(sp.citation, sp.doi)}
+      `;
+
+      // No anchor param — default top-left on 0x0 wrapper = exact geo-point.
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([loc.lon, loc.lat])
+        .addTo(map);
+
+      el.addEventListener('click', e => { e.stopPropagation(); showPopup([loc.lon, loc.lat], popup_html); });
+      markers.species.push(marker);
+    });
+  });
+}
+
+// ── LAYER TOGGLE ──────────────────────────────────────────────────────────
+function toggleLayer(layerName, btn) {
+  layerVisible[layerName] = !layerVisible[layerName];
+  btn.classList.toggle('active', layerVisible[layerName]);
+  btn.classList.toggle('inactive', !layerVisible[layerName]);
+  if (layerName === 'species') {
+    markers.species.forEach(m => {
+      m.getElement().style.display = layerVisible[layerName] ? 'block' : 'none';
+    });
+  } else {
+    setRasterLayerVisibility(layerName, layerVisible[layerName]);
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+map.on('load', () => {
+  map.resize();
+  buildRasterLayers();
+  buildSpeciesMarkers();
+});
+window.addEventListener('resize', () => map.resize());
+
+// ── PULSE ANIMATION ───────────────────────────────────────────────────────
+const styleEl = document.createElement('style');
+styleEl.textContent = `
+  @keyframes pulse-ring {
+    0%   { transform: scale(1); opacity: 0.6; }
+    70%  { transform: scale(1.6); opacity: 0; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+`;
+document.head.appendChild(styleEl);
+</script>
+
+<!-- map_layers.js loads AFTER inline script so tagHtml/popupRow/showPopup are defined -->
+<script src="map_layers.js"></script>
+
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
+  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
+  // across multiple labels.
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  // Trust decision: when the sender is same-origin-visible (event.origin is a
+  // real origin like https://www.perplexity.ai) we trust event.origin directly.
+  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
+  // broker's stamped `parentOrigin` to identify the top window. The fallback
+  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
+  // on the response path (see postToTrustedTop) to ensure replies can't be
+  // delivered to anyone but the actual top window of that claimed origin.
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  // All responses go to window.top with targetOrigin = the allowlisted origin.
+  // An attacker that iframes us inside their own null-origin broker can claim
+  // any parentOrigin they like, but the browser will drop the reply whenever
+  // the real top's origin doesn't match — so the screenshot never leaves.
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      // cssText on a computed style is the serialized declaration in modern
+      // Chromium/Safari — a single read beats enumerating ~400 longhand
+      // properties. Firefox returns "" here, so we fall back on empty.
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  // Cache resolved font URL -> data URI across captures. Fonts on a page
+  // essentially never change, and a batch run emits multiple captures back to
+  // back — without this we'd refetch + re-base64 every time.
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      // Wait for any pending web fonts to resolve so both inline metrics and
+      // the @font-face inlining below see the same loaded faces.
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
+      // can resolve them — external font URLs aren't fetched during
+      // foreignObject rendering, which would otherwise force a fallback face
+      // and change text metrics.
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="transform:translate(-${scrollX}px,-${scrollY}px);transform-origin:top left">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    // Only accept messages from the direct parent frame. Blocks sibling /
+    // unrelated-window postMessage senders that could otherwise reach us.
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+
+
+</script></body>
+</html>
