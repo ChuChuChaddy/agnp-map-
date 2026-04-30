@@ -1,45 +1,11 @@
 // ── RASTER / HEATMAP LAYER BUILDERS ──────────────────────────────────────
 
 function buildRasterLayers() {
-  // ── SOURCE: Field Measurements ──
+  // ── SOURCE: Field Measurements (registered here, layer added last so it's on top) ──
   map.addSource('sampling-src', { type: 'geojson', data: GEOJSON_L1 });
-  // Circle layer only — no heatmap puffball
-  map.addLayer({
-    id: 'sampling-circles',
-    type: 'circle',
-    source: 'sampling-src',
-    minzoom: 2,
-    paint: {
-      'circle-radius': ['interpolate',['linear'],['zoom'], 2,2, 5,3, 7,5, 14,14],
-      'circle-color': ['interpolate',['linear'],['get','intensity'],
-        0,   '#4ecdc4',
-        0.25,'#ffd700',
-        0.5, '#ffb347',
-        0.75,'#ff6b35',
-        1.0, '#ff2d2d'
-      ],
-      'circle-opacity': 0.9,
-      'circle-stroke-width': 1.5,
-      'circle-stroke-color': 'rgba(255,255,255,0.3)'
-    }
-  });
 
-  // ── SOURCE: Release Models (PEC) ──
+  // ── SOURCE: Release Models (PEC) (registered here, layer added last so it's on top) ──
   map.addSource('model-src', { type: 'geojson', data: GEOJSON_L2 });
-  // Circle layer only — no heatmap puffball
-  map.addLayer({
-    id: 'model-circles',
-    type: 'circle',
-    source: 'model-src',
-    minzoom: 2,
-    paint: {
-      'circle-radius': ['interpolate',['linear'],['zoom'], 2,2, 5,3, 7,5, 14,14],
-      'circle-color': '#a78bfa',
-      'circle-opacity': ['interpolate',['linear'],['get','intensity'], 0,0.4, 1,0.9],
-      'circle-stroke-width': 1.5,
-      'circle-stroke-color': 'rgba(167,139,250,0.5)'
-    }
-  });
 
   // ── SOURCE: Ocean grid background — smooth heatmap, no visible pixels ──
   // Uses 5760-point IDW grid. Heatmap kernel produces continuous Gaussian field.
@@ -242,6 +208,40 @@ function buildRasterLayers() {
       'circle-stroke-width': 1.5,
       'circle-stroke-color': ['case', ['get','enters_danger_zone'], '#fb923c', '#6ee7b7'],
       'circle-stroke-opacity': ['interpolate',['linear'],['zoom'], 5,0.5, 7,0.85]
+    }
+  });
+
+  // ── Field Measurement + PEC circles: added LAST so they render above land mask ──
+  map.addLayer({
+    id: 'sampling-circles',
+    type: 'circle',
+    source: 'sampling-src',
+    minzoom: 1,
+    paint: {
+      'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 2,6, 4,7, 5,7, 7,8, 14,14],
+      'circle-color': ['interpolate',['linear'],['get','intensity'],
+        0,   '#4ecdc4',
+        0.25,'#ffd700',
+        0.5, '#ffb347',
+        0.75,'#ff6b35',
+        1.0, '#ff2d2d'
+      ],
+      'circle-opacity': 1.0,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': 'rgba(255,255,255,0.85)'
+    }
+  });
+  map.addLayer({
+    id: 'model-circles',
+    type: 'circle',
+    source: 'model-src',
+    minzoom: 1,
+    paint: {
+      'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 2,6, 4,7, 5,7, 7,8, 14,14],
+      'circle-color': '#a78bfa',
+      'circle-opacity': 1.0,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': 'rgba(255,255,255,0.85)'
     }
   });
 
