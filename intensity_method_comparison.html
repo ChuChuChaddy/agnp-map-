@@ -1,0 +1,117 @@
+<div style="padding: 1rem 0;">
+  <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; font-size: 12px; color: var(--color-text-secondary);">
+    <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 16px; height: 2px; background: #888780; border-top: 1px dashed #888780;"></span>Previous: 9-bin lookup (step function)</span>
+    <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 16px; height: 2px; background: #534AB7;"></span>Updated: 0.025 + 0.355·log(|Δsal|+1)</span>
+    <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #D4537E;"></span>danger=YES site</span>
+    <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #1D9E75;"></span>danger=NO site</span>
+  </div>
+  <div style="position: relative; width: 100%; height: 380px;">
+    <canvas id="cmpChart" role="img" aria-label="Scatter plot comparing original bin-based intensity assignments to the fitted log-linear curve across 71 estuarine sites">Comparison: previous step function vs fitted log curve, with 71 site assignments overlaid.</canvas>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+  const dangerYes = [{"x":4.0,"y":0.575},{"x":2.2,"y":0.384},{"x":4.0,"y":0.575},{"x":2.9,"y":0.458},{"x":3.3,"y":0.501},{"x":1.5,"y":0.309},{"x":4.0,"y":0.575},{"x":4.0,"y":0.575},{"x":3.0,"y":0.469},{"x":2.6,"y":0.426},{"x":3.5,"y":0.522},{"x":2.4,"y":0.405},{"x":4.5,"y":0.628},{"x":3.7,"y":0.543},{"x":4.0,"y":0.575},{"x":4.0,"y":0.575},{"x":4.0,"y":0.575},{"x":3.5,"y":0.522},{"x":2.0,"y":0.362},{"x":0.5,"y":0.203},{"x":0.0,"y":0.15},{"x":3.3,"y":0.501},{"x":3.5,"y":0.522},{"x":4.0,"y":0.575},{"x":2.7,"y":0.437},{"x":4.0,"y":0.575},{"x":1.4,"y":0.299},{"x":3.5,"y":0.522},{"x":4.0,"y":0.575},{"x":4.0,"y":0.575},{"x":2.5,"y":0.416},{"x":1.5,"y":0.309},{"x":3.5,"y":0.522},{"x":4.0,"y":0.575},{"x":4.5,"y":0.628},{"x":4.0,"y":0.575},{"x":3.5,"y":0.522},{"x":4.0,"y":0.575},{"x":3.5,"y":0.522}];
+  const dangerNo = [{"x":4.0,"y":0.575},{"x":5.0,"y":0.681},{"x":7.0,"y":0.894},{"x":7.0,"y":0.894},{"x":4.5,"y":0.628},{"x":6.0,"y":0.787},{"x":5.0,"y":0.681},{"x":4.5,"y":0.628},{"x":6.0,"y":0.787},{"x":4.5,"y":0.628},{"x":6.0,"y":0.787},{"x":5.0,"y":0.681},{"x":1.5,"y":0.309},{"x":5.0,"y":0.681},{"x":4.5,"y":0.628},{"x":6.0,"y":0.787},{"x":8.0,"y":1.0},{"x":30.0,"y":1.0},{"x":5.0,"y":0.681},{"x":5.5,"y":0.734},{"x":6.0,"y":0.787},{"x":5.5,"y":0.734},{"x":5.5,"y":0.734},{"x":7.0,"y":0.894},{"x":5.0,"y":0.681},{"x":4.0,"y":0.575},{"x":17.0,"y":1.0},{"x":7.0,"y":0.894},{"x":20.0,"y":1.0},{"x":6.0,"y":0.894},{"x":4.5,"y":0.628},{"x":5.0,"y":0.681}];
+
+  // Smooth fitted curve
+  const curve = [];
+  for (let x = 0; x <= 32; x += 0.25) {
+    curve.push({x: x, y: Math.min(1, Math.max(0, 0.0248 + 0.3549 * Math.log(x + 1)))});
+  }
+
+  // Step function for previous method (bin midpoints)
+  const stepEdges = [
+    [0, 0.5, 0.175],
+    [0.5, 1.5, 0.30],
+    [1.5, 3, 0.40],
+    [3, 5, 0.49],
+    [5, 7, 0.55],
+    [7, 10, 0.65],
+    [10, 15, 0.76],
+    [15, 25, 0.87],
+    [25, 32, 1.0]
+  ];
+  const step = [];
+  stepEdges.forEach(([lo, hi, v]) => {
+    step.push({x: lo, y: v});
+    step.push({x: hi, y: v});
+  });
+
+  new Chart(document.getElementById('cmpChart'), {
+    data: {
+      datasets: [
+        {
+          type: 'line',
+          label: 'Previous (bins)',
+          data: step,
+          borderColor: '#888780',
+          borderDash: [6, 4],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          stepped: 'before',
+          fill: false,
+          order: 3
+        },
+        {
+          type: 'line',
+          label: 'Updated (log-linear)',
+          data: curve,
+          borderColor: '#534AB7',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          order: 2
+        },
+        {
+          type: 'scatter',
+          label: 'danger=YES',
+          data: dangerYes,
+          backgroundColor: 'rgba(212, 83, 126, 0.65)',
+          borderColor: '#993556',
+          borderWidth: 0.5,
+          pointRadius: 4,
+          pointStyle: 'circle',
+          order: 1
+        },
+        {
+          type: 'scatter',
+          label: 'danger=NO',
+          data: dangerNo,
+          backgroundColor: 'rgba(29, 158, 117, 0.65)',
+          borderColor: '#0F6E56',
+          borderWidth: 0.5,
+          pointRadius: 4,
+          pointStyle: 'triangle',
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `Δsal=${ctx.parsed.x.toFixed(1)}‰, intensity=${ctx.parsed.y.toFixed(3)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: 0,
+          max: 32,
+          title: { display: true, text: '|Δ Salinity| (‰)' }
+        },
+        y: {
+          min: 0,
+          max: 1.05,
+          title: { display: true, text: 'Risk Intensity' }
+        }
+      }
+    }
+  });
+</script>

@@ -78,8 +78,8 @@ function buildRasterLayers() {
         'interpolate', ['linear'], ['zoom'],
         1, 0.82,
         4, 0.88,
-        6, 0.95,
-        7, 1.0
+        6, 0.92,
+        7, 0.95
       ]
     }
   });
@@ -218,7 +218,7 @@ function buildRasterLayers() {
     source: 'sampling-src',
     minzoom: 1,
     paint: {
-      'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 2,6, 4,7, 5,7, 7,8, 14,14],
+      'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 2,7, 4,8, 5,8, 7,9, 14,14],
       'circle-color': ['interpolate',['linear'],['get','intensity'],
         0,   '#4ecdc4',
         0.25,'#ffd700',
@@ -227,8 +227,8 @@ function buildRasterLayers() {
         1.0, '#ff2d2d'
       ],
       'circle-opacity': 1.0,
-      'circle-stroke-width': 2,
-      'circle-stroke-color': 'rgba(255,255,255,0.85)'
+      'circle-stroke-width': 2.5,
+      'circle-stroke-color': 'rgba(255,255,255,1.0)'
     }
   });
   map.addLayer({
@@ -237,11 +237,11 @@ function buildRasterLayers() {
     source: 'model-src',
     minzoom: 1,
     paint: {
-      'circle-radius': ['interpolate',['linear'],['zoom'], 1,5, 2,6, 4,7, 5,7, 7,8, 14,14],
+      'circle-radius': ['interpolate',['linear'],['zoom'], 1,6, 2,7, 4,8, 5,8, 7,9, 14,14],
       'circle-color': '#a78bfa',
       'circle-opacity': 1.0,
-      'circle-stroke-width': 2,
-      'circle-stroke-color': 'rgba(255,255,255,0.85)'
+      'circle-stroke-width': 2.5,
+      'circle-stroke-color': 'rgba(255,255,255,1.0)'
     }
   });
 
@@ -250,7 +250,9 @@ function buildRasterLayers() {
     map.on('click', layer, (e) => {
       const p = e.features[0].properties;
       const conc = p.conc_ng_L;
-      const concStr = conc < 0.001 ? `${(conc*1e6).toFixed(1)} fg/L`
+      const concStr = (conc == null || conc === 'null')
+                    ? (p.conc_NPs_per_L ? `${p.conc_NPs_per_L} NPs/L` : 'See notes')
+                    : conc < 0.001 ? `${(conc*1e6).toFixed(1)} fg/L`
                     : conc < 1    ? `${(conc*1000).toFixed(1)} pg/L`
                     : conc < 1000 ? `${conc.toFixed(2)} ng/L`
                     : `${(conc/1000).toFixed(3)} µg/L`;
